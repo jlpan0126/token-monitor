@@ -31,7 +31,7 @@ function load(){
     return s;
   }catch{ return structuredClone(DEFAULTS); }
 }
-function save(){ state.updatedAt = state.updatedAt || nowISO(); localStorage.setItem(KEY, JSON.stringify(state)); }
+function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }  // updatedAt 只在手動更新%時設,不自動蓋
 function nowISO(){ return new Date().toISOString(); }
 
 /* ---- reset 自動滾動:若 resetsAt 已過且有週期,往前推到未來,並把 used 歸零 ---- */
@@ -109,14 +109,19 @@ function render(){
   const staleMs = up ? Date.now()-up.getTime() : Infinity;
   const stale = staleMs > 6*3600e3;
   el('updated').innerHTML = up
-    ? `剩餘% 最後更新:${fmtTime(state.updatedAt)}${stale?' <span class="stale">· 可能過期,建議重對</span>':''}`
-    : '尚未設定剩餘% — 點下方任一儀表輸入';
+    ? `方案額度%最後更新:${fmtTime(state.updatedAt)}${stale?' <span class="stale">· 可能過期,建議重對</span>':''}`
+    : '⬆ 上方為「方案額度%」需你手動對數字(點儀表輸入) ｜ ⬇ 下方 Code 用量自動更新';
 
   cardsBox.innerHTML = '';
   state.windows.forEach((w,i)=>{
+    // 從未設定過:沒有 reset 時間、沒填過 used、也沒歷史 → 顯示「未設定」而非假裝 100%
+    const unset = !w.resetsAt && !(w.used>0) && !(w.history?.length);
     const remain = Math.max(0, 100 - (w.used||0));
-    const col = colorFor(w.used||0);
-    const R=52, C=2*Math.PI*R, off=C*(1-remain/100);
+    const col = unset ? 'var(--line)' : colorFor(w.used||0);
+    const R=52, C=2*Math.PI*R, off = unset ? C : C*(1-remain/100);
+    const centerPct = unset ? '設定' : remain+'%';
+    const centerCap = unset ? '尚未輸入' : '剩餘';
+    const centerColor = unset ? 'var(--dim)' : col;
     const card = document.createElement('div');
     card.className='card';
     card.innerHTML = `
@@ -129,7 +134,7 @@ function render(){
             <circle cx="60" cy="60" r="${R}" fill="none" stroke="${col}" stroke-width="11"
               stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/>
           </svg>
-          <div class="val"><div class="pct" style="color:${col}">${remain}%</div><div class="cap">剩餘</div></div>
+          <div class="val"><div class="pct" style="color:${centerColor};font-size:${unset?'18px':'26px'}">${centerPct}</div><div class="cap">${centerCap}</div></div>
         </div>
         <div class="meta">
           <div class="row"><span class="k">距離 reset</span><span class="v count" data-cd="${i}">—</span></div>
