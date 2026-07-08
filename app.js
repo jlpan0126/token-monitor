@@ -3,10 +3,12 @@
    資料模型存於 localStorage;reset 時間本地自動倒數;剩餘% 手動/同步更新。 */
 
 const KEY = 'claude-quota-v1';
+// 桌機採集器(launchd 每 20 分)推送的 gist,含本機 Claude Code 用量
+const CODE_SYNC_URL = 'https://gist.githubusercontent.com/jlpan0126/f5b6c0440ec49dc254dee8083e1cb141/raw/data.json';
 const DEFAULTS = {
   plan: 'Max',
   updatedAt: null,
-  syncUrl: '',
+  syncUrl: CODE_SYNC_URL,
   windows: [
     { id:'5h',   label:'5 小時視窗', sub:'全模型合計 · 每 5 小時重置', used:0, resetsAt:null, periodMs:5*3600e3 },
     { id:'week', label:'每週視窗',   sub:'全模型合計 · 每 7 天重置',   used:0, resetsAt:null, periodMs:7*24*3600e3 },
@@ -20,6 +22,7 @@ function load(){
   try{
     const s = JSON.parse(localStorage.getItem(KEY));
     if(!s || !s.windows) return structuredClone(DEFAULTS);
+    if(!s.syncUrl) s.syncUrl = CODE_SYNC_URL;   // 補上採集器同步網址
     // merge to pick up any new default windows / fields
     for(const d of DEFAULTS.windows){
       if(!s.windows.find(w=>w.id===d.id)) s.windows.push(structuredClone(d));
@@ -60,6 +63,30 @@ function colorFor(usedPct){
   if(remain <= 10) return 'var(--bad)';
   if(remain <= 30) return 'var(--warn)';
   return 'var(--ok)';
+}
+
+/* 每次「已使用%」更新就記一筆歷史(事件式取樣) */
+function pushHistory(w, used){
+  if(!Array.isArray(w.history)) w.history=[];
+  w.history.push({ t:Date.now(), u:used });
+  if(w.history.length>120) w.history = w.history.slice(-120);
+}
+
+/* 用歷史畫剩餘% 趨勢小圖(inline SVG,越往下代表用越多) */
+function sparkline(hist){
+  if(!hist || hist.length<2)
+    return '<div class="spark-empty">更新幾次後會出現趨勢線</div>';
+  const W=280,H=38,pad=4;
+  const xs=hist.map((_,i)=> hist.length===1?W/2 : i/(hist.length-1)*(W-2*pad)+pad);
+  const ys=hist.map(p=>{ const r=100-(p.u||0); return H-pad-(r/100)*(H-2*pad); });
+  const pts=xs.map((x,i)=>`${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
+  const last=hist[hist.length-1], col=colorFor(last.u||0);
+  const area=`${pad},${H-pad} ${pts} ${(W-pad).toFixed(1)},${H-pad}`;
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <polygon points="${area}" fill="${col}" opacity="0.13"/>
+      <polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${xs[xs.length-1].toFixed(1)}" cy="${ys[ys.length-1].toFixed(1)}" r="2.8" fill="${col}"/>
+    </svg>`;
 }
 
 function fmtCountdown(ms){
@@ -110,6 +137,10 @@ function render(){
           <div class="row"><span class="k">已使用</span><span class="v">${w.used||0}%</span></div>
         </div>
       </div>
+      <div class="sparkwrap">
+        <div class="spark-head">剩餘% 趨勢<span>${(w.history?.length||0)} 筆</span></div>
+        ${sparkline(w.history)}
+      </div>
       <div class="edit">
         <button data-edit="${i}">✏ 更新此視窗</button>
         ${w.custom?`<button class="ghost" data-del="${i}">🗑 刪除</button>`:''}
@@ -118,7 +149,37 @@ function render(){
   });
   cardsBox.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEdit(+b.dataset.edit));
   cardsBox.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delWindow(+b.dataset.del));
+  renderCode();
   tickCountdowns();
+}
+
+function fmtTok(n){
+  if(n==null) return '—';
+  if(n>=1e6) return (n/1e6).toFixed(1)+'M';
+  if(n>=1e3) return Math.round(n/1e3)+'k';
+  return ''+n;
+}
+/* 桌機採集器的 Claude Code 用量卡:近 N 天每日 token 長條 */
+function renderCode(){
+  const box=el('codeCard'); if(!box) return;
+  const c=state.code;
+  if(!c || !c.byDay || !Object.keys(c.byDay).length){ box.innerHTML=''; return; }
+  const days=Object.keys(c.byDay).sort();
+  const vals=days.map(d=>c.byDay[d]||0);
+  const max=Math.max(...vals,1);
+  const bars=days.map((d,i)=>{
+    const h=Math.max(3, Math.round(vals[i]/max*46));
+    const lab=d.slice(5).replace('-','/');
+    return `<div class="bar"><div class="bar-fill" style="height:${h}px"></div><div class="bar-lab">${lab}</div></div>`;
+  }).join('');
+  const up=c.updatedAt?new Date(c.updatedAt):null;
+  box.innerHTML = `<div class="card">
+    <h2>Claude Code 本機用量<span class="pill">自動採集</span></h2>
+    <div class="sub">這台機器 · 近 ${days.length} 天每日 token(含 cache)${up?' · 更新 '+fmtTime(c.updatedAt):''}</div>
+    <div class="bars">${bars}</div>
+    <div class="row"><span class="k">過去 5 小時</span><span class="v">${fmtTok(c.h5Tokens)} tok</span></div>
+    <div class="row"><span class="k">過去 7 天</span><span class="v">${fmtTok(c.weekTokens)} tok</span></div>
+  </div>`;
 }
 
 function tickCountdowns(){
@@ -150,7 +211,9 @@ el('usedRange').oninput=e=>el('usedNum').textContent=e.target.value;
 el('editCancel').onclick=()=>el('editDlg').close();
 el('editSave').onclick=()=>{
   const w=state.windows[editing];
-  w.used=+el('usedRange').value;
+  const nv=+el('usedRange').value;
+  if(w.used!==nv || !w.history?.length) pushHistory(w, nv);
+  w.used=nv;
   w.resetsAt = el('resetAt').value ? new Date(el('resetAt').value).toISOString() : w.resetsAt;
   w.autoReset=false;
   state.updatedAt=nowISO();
@@ -212,11 +275,25 @@ el('btnSync').onclick=async()=>{
 };
 function mergeSync(data){
   if(data.plan) state.plan=data.plan;
-  if(data.updatedAt) state.updatedAt=data.updatedAt;
+  // 採集器來源:只吃 Code 用量,不覆蓋你手填的方案%(dw.used 為 null 時不動)
+  if(data.source==='claude-code-local' && data.detail){
+    state.code = {
+      byDay: data.detail.byDay || {},
+      h5Tokens: data.windows?.find(w=>w.id==='5h')?.codeTokens,
+      weekTokens: data.windows?.find(w=>w.id==='week')?.codeTokens,
+      updatedAt: data.updatedAt,
+    };
+  } else if(data.updatedAt){
+    state.updatedAt=data.updatedAt;
+  }
   if(Array.isArray(data.windows)){
     for(const dw of data.windows){
       const w=state.windows.find(x=>x.id===dw.id);
-      if(w){ if(dw.used!=null)w.used=dw.used; if(dw.resetsAt)w.resetsAt=dw.resetsAt; w.autoReset=false; }
+      if(w){
+        if(dw.used!=null){ if(w.used!==dw.used) pushHistory(w, dw.used); w.used=dw.used; }
+        if(dw.resetsAt)w.resetsAt=dw.resetsAt;
+        w.autoReset=false;
+      }
     }
   }
 }

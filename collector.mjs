@@ -70,7 +70,9 @@ for(const fp of files){
     add(acc.week,u);
     if(age<=W5H) add(acc.h5,u);
     const day=new Date(ts).toISOString().slice(0,10);
-    acc.byDay[day]=(acc.byDay[day]||0)+(u.output_tokens||0)+(u.input_tokens||0);
+    // 與下方總計同口徑(含 cache),長條圖才對得起來
+    acc.byDay[day]=(acc.byDay[day]||0)+(u.input_tokens||0)+(u.output_tokens||0)
+      +(u.cache_read_input_tokens||0)+(u.cache_creation_input_tokens||0);
     const m=d.message?.model||'?'; acc.models[m]=(acc.models[m]||0)+1;
   });
 }
