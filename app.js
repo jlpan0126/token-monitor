@@ -8,8 +8,9 @@ const DEFAULTS = {
   updatedAt: null,
   syncUrl: '',
   windows: [
-    { id:'5h',   label:'5 小時滾動視窗', sub:'每 5 小時重置', used:0, resetsAt:null, periodMs:5*3600e3 },
-    { id:'week', label:'每週視窗',       sub:'每 7 天重置',   used:0, resetsAt:null, periodMs:7*24*3600e3 },
+    { id:'5h',   label:'5 小時視窗', sub:'全模型合計 · 每 5 小時重置', used:0, resetsAt:null, periodMs:5*3600e3 },
+    { id:'week', label:'每週視窗',   sub:'全模型合計 · 每 7 天重置',   used:0, resetsAt:null, periodMs:7*24*3600e3 },
+    { id:'fable5-week', label:'Fable 5 週額度', sub:'僅 Fable 5(若官方頁面有拆) · 每 7 天重置', used:0, resetsAt:null, periodMs:7*24*3600e3 },
   ],
 };
 
@@ -109,10 +110,14 @@ function render(){
           <div class="row"><span class="k">已使用</span><span class="v">${w.used||0}%</span></div>
         </div>
       </div>
-      <div class="edit"><button data-edit="${i}">✏ 更新此視窗</button></div>`;
+      <div class="edit">
+        <button data-edit="${i}">✏ 更新此視窗</button>
+        ${w.custom?`<button class="ghost" data-del="${i}">🗑 刪除</button>`:''}
+      </div>`;
     cardsBox.appendChild(card);
   });
   cardsBox.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEdit(+b.dataset.edit));
+  cardsBox.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delWindow(+b.dataset.del));
   tickCountdowns();
 }
 
@@ -152,7 +157,31 @@ el('editSave').onclick=()=>{
   save(); el('editDlg').close(); render();
 };
 
+/* ---------- 新增 / 刪除視窗 ---------- */
+function addWindow(){
+  const name=prompt('視窗名稱(例如:Opus 週額度 / Fable 5 五小時)');
+  if(!name) return;
+  const pick=prompt('重置週期:輸入 5h、week,或天數(如 7)','week');
+  if(pick===null) return;
+  let periodMs=7*24*3600e3;
+  const p=(pick||'').trim().toLowerCase();
+  if(p==='5h') periodMs=5*3600e3;
+  else if(p==='week'||p==='7') periodMs=7*24*3600e3;
+  else if(!isNaN(+p) && +p>0) periodMs=+p*24*3600e3;
+  const hours=periodMs/3600e3;
+  const sub = hours%24===0 ? `每 ${hours/24} 天重置` : `每 ${hours} 小時重置`;
+  state.windows.push({ id:'w'+Date.now(), label:name.trim(), sub, used:0, resetsAt:null, periodMs, custom:true });
+  save(); render();
+}
+function delWindow(i){
+  const w=state.windows[i];
+  if(!w?.custom) return;
+  if(!confirm(`刪除「${w.label}」?`)) return;
+  state.windows.splice(i,1); save(); render();
+}
+
 /* ---------- 設定 / 匯入匯出 ---------- */
+el('btnAdd').onclick=addWindow;
 el('btnSettings').onclick=()=>{ el('setPlan').value=state.plan||''; el('setSync').value=state.syncUrl||''; el('setDlg').showModal(); };
 el('setClose').onclick=()=>el('setDlg').close();
 el('setSave').onclick=()=>{ state.plan=el('setPlan').value.trim()||'Max'; state.syncUrl=el('setSync').value.trim(); save(); el('setDlg').close(); render(); };

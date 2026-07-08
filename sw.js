@@ -1,5 +1,5 @@
 /* 極簡離線快取:app shell 走 cache-first,資料(sync)一律走網路 */
-const CACHE = 'claude-quota-v1';
+const CACHE = 'claude-quota-v2';
 const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/apple-touch-icon.png'];
 
