@@ -110,7 +110,7 @@ function render(){
   const stale = staleMs > 6*3600e3;
   el('updated').innerHTML = up
     ? `方案額度%最後更新:${fmtTime(state.updatedAt)}${stale?' <span class="stale">· 可能過期,建議重對</span>':''}`
-    : '⬆ 上方為「方案額度%」需你手動對數字(點儀表輸入) ｜ ⬇ 下方 Code 用量自動更新';
+    : '⬆ 上方 Claude Code 用量為自動(你的真實用量) ｜ ⬇ 下方「方案額度%」需手動對數字';
 
   cardsBox.innerHTML = '';
   state.windows.forEach((w,i)=>{
