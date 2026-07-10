@@ -75,7 +75,7 @@ function pushHistory(w, used){
 /* 用歷史畫剩餘% 趨勢小圖(inline SVG,越往下代表用越多) */
 function sparkline(hist){
   if(!hist || hist.length<2)
-    return '<div class="spark-empty">更新幾次後會出現趨勢線</div>';
+    return '<div class="spark-empty">趨勢累積中,稍後自動出現</div>';
   const W=280,H=38,pad=4;
   const xs=hist.map((_,i)=> hist.length===1?W/2 : i/(hist.length-1)*(W-2*pad)+pad);
   const ys=hist.map(p=>{ const r=100-(p.u||0); return H-pad-(r/100)*(H-2*pad); });
@@ -146,10 +146,9 @@ function render(){
         <div class="spark-head">剩餘% 趨勢<span>${(w.history?.length||0)} 筆</span></div>
         ${sparkline(w.history)}
       </div>
-      <div class="edit">
-        <button data-edit="${i}">✏ 更新此視窗</button>
-        ${w.custom?`<button class="ghost" data-del="${i}">🗑 刪除</button>`:''}
-      </div>`;
+      ${w.custom
+        ? `<div class="edit"><button data-edit="${i}">✏ 編輯</button><button class="ghost" data-del="${i}">🗑 刪除</button></div>`
+        : `<div class="auto-note">官方自動更新,無需手動</div>`}`;
     cardsBox.appendChild(card);
   });
   cardsBox.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEdit(+b.dataset.edit));
@@ -308,11 +307,6 @@ el('fileImport').onchange=e=>{
 };
 
 /* ---------- 動作按鈕 ---------- */
-el('btnRefresh').onclick=()=>{
-  window.open('https://claude.ai/settings/usage','_blank','noopener');
-  // 開頁面後,使用者回來點各儀表輸入數字;給個提示
-  setTimeout(()=>{ if(state.windows.every(w=>!w.resetsAt)) openEdit(0); },400);
-};
 el('btnSync').onclick=async()=>{
   if(!state.syncUrl){ el('btnSettings').click(); alert('請先在設定填入雲端同步 JSON 網址'); return; }
   try{
