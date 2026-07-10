@@ -114,8 +114,8 @@ function render(){
 
   cardsBox.innerHTML = '';
   state.windows.forEach((w,i)=>{
-    // 從未設定過:沒有 reset 時間、沒填過 used、也沒歷史 → 顯示「未設定」而非假裝 100%
-    const unset = !w.resetsAt && !(w.used>0) && !(w.history?.length);
+    // 只有「完全沒資料」(沒 reset 時間也沒歷史)才算未設定;自動同步後 0% 是真實值
+    const unset = !w.resetsAt && !(w.history?.length);
     const remain = Math.max(0, 100 - (w.used||0));
     const col = unset ? 'var(--line)' : colorFor(w.used||0);
     const R=52, C=2*Math.PI*R, off = unset ? C : C*(1-remain/100);
@@ -155,6 +155,7 @@ function render(){
   cardsBox.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEdit(+b.dataset.edit));
   cardsBox.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delWindow(+b.dataset.del));
   renderCode();
+  renderTrend();
   tickCountdowns();
 }
 
@@ -184,6 +185,49 @@ function renderCode(){
     <div class="bars">${bars}</div>
     <div class="row"><span class="k">過去 5 小時</span><span class="v">${fmtTok(c.h5Tokens)} tok</span></div>
     <div class="row"><span class="k">過去 7 天</span><span class="v">${fmtTok(c.weekTokens)} tok</span></div>
+  </div>`;
+}
+
+/* 長期趨勢卡:官方使用率折線 + 每日 token 長條(最多 30 天) */
+function renderTrend(){
+  const box=el('trendCard'); if(!box) return;
+  const h=state.history;
+  const snaps=(h&&h.snapshots)||[], daily=(h&&h.dailyTokens)||{};
+  const dayKeys=Object.keys(daily).sort();
+  if(snaps.length<2 && dayKeys.length<2){ box.innerHTML=''; return; }
+
+  // 官方使用率折線(每週 + 5小時)
+  let lineSvg='';
+  if(snaps.length>=2){
+    const W=300,H=72,pad=6;
+    const t0=snaps[0].t, t1=snaps[snaps.length-1].t, span=Math.max(1,t1-t0);
+    const pts=(key)=> snaps.filter(s=>s[key]!=null).map(s=>{
+      const x=pad+(s.t-t0)/span*(W-2*pad);
+      const y=H-pad-((s[key]||0)/100)*(H-2*pad);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    lineSvg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:80px" preserveAspectRatio="none">
+        <line x1="${pad}" y1="${pad}" x2="${W-pad}" y2="${pad}" stroke="var(--line)" stroke-width="1"/>
+        <polyline points="${pts('u5')}" fill="none" stroke="var(--dim)" stroke-width="1.2" stroke-dasharray="3 3"/>
+        <polyline points="${pts('u7')}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>
+      </svg>
+      <div class="legend"><span style="color:var(--accent)">━</span> 每週%　<span style="color:var(--dim)">┈</span> 5 小時%　<span style="float:right">上緣=100%</span></div>`;
+  }
+
+  // 每日 token 長條(最多 30 天)
+  let barSvg='';
+  if(dayKeys.length>=2){
+    const days=dayKeys.slice(-30), vals=days.map(d=>daily[d]||0), max=Math.max(...vals,1);
+    const bars=days.map((d,i)=>{ const ht=Math.max(2,Math.round(vals[i]/max*46));
+      return `<div class="bar"><div class="bar-fill" style="height:${ht}px"></div></div>`; }).join('');
+    barSvg=`<div class="legend" style="margin-top:14px">每日 Claude Code token(${days[0].slice(5).replace('-','/')} ~ ${days[days.length-1].slice(5).replace('-','/')})<span style="float:right">峰值 ${fmtTok(max)}</span></div>
+      <div class="bars">${bars}</div>`;
+  }
+
+  box.innerHTML=`<div class="card">
+    <h2>長期趨勢<span class="pill">歷史累積</span></h2>
+    <div class="sub">桌機每 20 分自動存檔,越久資料越完整</div>
+    ${lineSvg}${barSvg}
   </div>`;
 }
 
@@ -286,6 +330,7 @@ function mergeSync(data){
     byDay:data.detail.byDay, h5Tokens:data.windows?.find(w=>w.id==='5h')?.codeTokens,
     weekTokens:data.windows?.find(w=>w.id==='week')?.codeTokens });
   if(cd) state.code = { byDay:cd.byDay||{}, h5Tokens:cd.h5Tokens, weekTokens:cd.weekTokens, updatedAt:data.updatedAt };
+  if(data.history) state.history = data.history;
   // 官方額度%:自動填進各視窗圈圈
   if(Array.isArray(data.windows)){
     for(const dw of data.windows){
