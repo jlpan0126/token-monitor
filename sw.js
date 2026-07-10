@@ -1,6 +1,6 @@
 /* 極簡離線快取:app shell 走 cache-first,資料(sync)一律走網路 */
-const CACHE = 'claude-quota-v7';
-const SHELL = ['./', './index.html', './app.js?v=7', './manifest.webmanifest',
+const CACHE = 'claude-quota-v8';
+const SHELL = ['./', './index.html', './app.js?v=8', './manifest.webmanifest',
   './icons/icon-192.png', './icons/apple-touch-icon.png'];
 // 註:app.js 版本號隨 index.html 的 ?v= 更新
 

@@ -12,7 +12,7 @@ const DEFAULTS = {
   windows: [
     { id:'5h',   label:'5 小時視窗', sub:'全模型合計 · 每 5 小時重置', used:0, resetsAt:null, periodMs:5*3600e3 },
     { id:'week', label:'每週視窗',   sub:'全模型合計 · 每 7 天重置',   used:0, resetsAt:null, periodMs:7*24*3600e3 },
-    { id:'fable5-week', label:'Fable 5 週額度', sub:'僅 Fable 5(若官方頁面有拆) · 每 7 天重置', used:0, resetsAt:null, periodMs:7*24*3600e3 },
+    { id:'fable5-week', label:'Fable 5 週額度', sub:'僅 Fable · 每 7 天重置(官方)', used:0, resetsAt:null, periodMs:7*24*3600e3 },
   ],
 };
 
@@ -109,8 +109,8 @@ function render(){
   const staleMs = up ? Date.now()-up.getTime() : Infinity;
   const stale = staleMs > 6*3600e3;
   el('updated').innerHTML = up
-    ? `方案額度%最後更新:${fmtTime(state.updatedAt)}${stale?' <span class="stale">· 可能過期,建議重對</span>':''}`
-    : '⬆ 上方 Claude Code 用量為自動(你的真實用量) ｜ ⬇ 下方「方案額度%」需手動對數字';
+    ? `官方額度自動更新:${fmtTime(state.updatedAt)}${stale?' <span class="stale">· 桌機採集器可能沒在跑</span>':''}`
+    : '桌機採集器每 20 分自動抓官方額度 · 開啟後稍候即自動填入';
 
   cardsBox.innerHTML = '';
   state.windows.forEach((w,i)=>{
@@ -280,17 +280,13 @@ el('btnSync').onclick=async()=>{
 };
 function mergeSync(data){
   if(data.plan) state.plan=data.plan;
-  // 採集器來源:只吃 Code 用量,不覆蓋你手填的方案%(dw.used 為 null 時不動)
-  if(data.source==='claude-code-local' && data.detail){
-    state.code = {
-      byDay: data.detail.byDay || {},
-      h5Tokens: data.windows?.find(w=>w.id==='5h')?.codeTokens,
-      weekTokens: data.windows?.find(w=>w.id==='week')?.codeTokens,
-      updatedAt: data.updatedAt,
-    };
-  } else if(data.updatedAt){
-    state.updatedAt=data.updatedAt;
-  }
+  if(data.updatedAt) state.updatedAt=data.updatedAt;
+  // Code 用量卡(新格式 data.code;相容舊格式 data.detail)
+  const cd = data.code || (data.detail && {
+    byDay:data.detail.byDay, h5Tokens:data.windows?.find(w=>w.id==='5h')?.codeTokens,
+    weekTokens:data.windows?.find(w=>w.id==='week')?.codeTokens });
+  if(cd) state.code = { byDay:cd.byDay||{}, h5Tokens:cd.h5Tokens, weekTokens:cd.weekTokens, updatedAt:data.updatedAt };
+  // 官方額度%:自動填進各視窗圈圈
   if(Array.isArray(data.windows)){
     for(const dw of data.windows){
       const w=state.windows.find(x=>x.id===dw.id);
